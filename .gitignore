@@ -1,0 +1,52 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+methu/
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Runtime data
+data/memory/
+data/vector_db/
+data/conversations/
+data/uploads/
+data/screenshots/
+data/generated/
+data/logs/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing/cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build
+build/
+dist/
+*.egg-info/

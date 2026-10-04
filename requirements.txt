@@ -1,0 +1,65 @@
+# ============================================================
+# METHU - Multimodal Executive & Task Handling Unit
+# Core Dependencies
+# Python 3.11
+# ============================================================
+
+# -------------------------
+# API / Backend
+# -------------------------
+fastapi
+uvicorn[standard]
+websockets
+python-multipart
+
+# -------------------------
+# Environment / Configuration
+# -------------------------
+python-dotenv
+pydantic
+pydantic-settings
+
+# -------------------------
+# LangChain / LangGraph
+# -------------------------
+langchain
+langchain-core
+langchain-community
+langchain-openai
+langgraph
+langgraph-checkpoint-sqlite
+
+# -------------------------
+# OpenAI
+# -------------------------
+openai
+
+# -------------------------
+# MCP - Model Context Protocol
+# -------------------------
+mcp
+
+# -------------------------
+# HTTP / Async
+# -------------------------
+httpx
+aiohttp
+
+# -------------------------
+# Database
+# -------------------------
+sqlalchemy
+aiosqlite
+
+# -------------------------
+# Utilities
+# -------------------------
+tenacity
+orjson
+typing-extensions
+
+# -------------------------
+# Live Web Search
+# -------------------------
+tavily-python
+langchain-tavily
