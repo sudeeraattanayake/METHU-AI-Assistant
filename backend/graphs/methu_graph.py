@@ -2,6 +2,7 @@ from langgraph.graph import StateGraph, START, END
 
 from backend.core.state import MethuState
 from backend.core.planner import create_plan
+from backend.core.verifier import verify_tool_result
 
 from backend.agents.orchestrator import orchestrator_node
 from backend.agents.news_agent import news_agent_node
@@ -19,7 +20,9 @@ def coding_node(state: MethuState) -> dict:
         "status": "completed",
         "final_response": "Coding Agent selected.",
         "ui_event": "coding_agent_active",
-        "ui_payload": {"agent": "coding"},
+        "ui_payload": {
+            "agent": "coding",
+        },
     }
 
 
@@ -28,7 +31,9 @@ def research_node(state: MethuState) -> dict:
         "status": "completed",
         "final_response": "Research Agent selected.",
         "ui_event": "research_agent_active",
-        "ui_payload": {"agent": "research"},
+        "ui_payload": {
+            "agent": "research",
+        },
     }
 
 
@@ -37,7 +42,9 @@ def vision_node(state: MethuState) -> dict:
         "status": "completed",
         "final_response": "Vision Agent selected.",
         "ui_event": "vision_agent_active",
-        "ui_payload": {"agent": "vision"},
+        "ui_payload": {
+            "agent": "vision",
+        },
     }
 
 
@@ -46,7 +53,9 @@ def memory_node(state: MethuState) -> dict:
         "status": "completed",
         "final_response": "Memory Agent selected.",
         "ui_event": "memory_agent_active",
-        "ui_payload": {"agent": "memory"},
+        "ui_payload": {
+            "agent": "memory",
+        },
     }
 
 
@@ -55,27 +64,33 @@ def system_node(state: MethuState) -> dict:
         "status": "completed",
         "final_response": "System Agent selected.",
         "ui_event": "system_agent_active",
-        "ui_payload": {"agent": "system"},
+        "ui_payload": {
+            "agent": "system",
+        },
     }
 
 
 def conversation_node(state: MethuState) -> dict:
     return {
         "status": "completed",
-        "final_response": "METHU Orchestrator selected for conversation.",
+        "final_response": (
+            "METHU Orchestrator selected for conversation."
+        ),
         "ui_event": "methu_speaking",
-        "ui_payload": {"agent": "orchestrator"},
+        "ui_payload": {
+            "agent": "orchestrator",
+        },
     }
 
 
 # ============================================================
-# Multi-Step Planning
+# Planning Node
 # ============================================================
 
 
 def planning_node(state: MethuState) -> dict:
     """
-    Create ONE authoritative structured execution plan.
+    Create one authoritative structured execution plan.
     """
 
     user_input = state.get("user_input", "").strip()
@@ -144,7 +159,7 @@ def planning_node(state: MethuState) -> dict:
 
 def load_step_node(state: MethuState) -> dict:
     """
-    Load the next plan step into current_plan_step.
+    Load the next structured plan step.
     """
 
     plan = state.get("structured_plan", [])
@@ -161,6 +176,8 @@ def load_step_node(state: MethuState) -> dict:
         "current_plan_step": step,
         "selected_agent": step["agent"],
         "status": "executing",
+        "verified": False,
+        "verification_message": "",
         "ui_event": "methu_step_started",
         "ui_payload": {
             "step_id": step["step_id"],
@@ -177,9 +194,9 @@ def load_step_node(state: MethuState) -> dict:
 
 def execute_step_node(state: MethuState) -> dict:
     """
-    Execute exactly ONE plan step.
+    Execute exactly one structured plan step.
 
-    LangGraph controls the loop rather than execute_plan().
+    LangGraph controls the execution loop.
     """
 
     step = state.get("current_plan_step")
@@ -193,8 +210,13 @@ def execute_step_node(state: MethuState) -> dict:
     agent = step.get("agent")
     instruction = step.get("instruction", "")
 
-    session_id = state.get("session_id", "default")
+    session_id = state.get(
+        "session_id",
+        "default",
+    )
 
+    # Only these agents currently have real multi-step
+    # execution support.
     executors = {
         "computer": computer_agent_node,
         "browser": browser_agent_node,
@@ -229,7 +251,10 @@ def execute_step_node(state: MethuState) -> dict:
         }
 
     execution_results = list(
-        state.get("execution_results", [])
+        state.get(
+            "execution_results",
+            [],
+        )
     )
 
     step_result = {
@@ -241,12 +266,22 @@ def execute_step_node(state: MethuState) -> dict:
         "tool_name": result.get("tool_name"),
         "tool_result": result.get("tool_result"),
         "ui_event": result.get("ui_event"),
-        "ui_payload": result.get("ui_payload", {}),
+        "ui_payload": result.get(
+            "ui_payload",
+            {},
+        ),
+
+        # Verification happens in the next graph node.
+        "verified": False,
+        "verification": None,
     }
 
     execution_results.append(step_result)
 
-    # Tool execution failed
+    # --------------------------------------------------------
+    # Execution failed
+    # --------------------------------------------------------
+
     if result.get("status") != "completed":
         return {
             "status": "failed",
@@ -256,6 +291,9 @@ def execute_step_node(state: MethuState) -> dict:
                 or f"Step {step['step_id']} failed."
             ),
             "verified": False,
+            "verification_message": (
+                "Execution failed before verification."
+            ),
             "ui_event": "methu_step_failed",
             "ui_payload": {
                 "step": step,
@@ -263,22 +301,34 @@ def execute_step_node(state: MethuState) -> dict:
             },
         }
 
-    # IMPORTANT:
-    # current_step here represents how many plan steps
-    # have successfully completed.
-    completed_count = state.get("current_step", 0) + 1
+    # --------------------------------------------------------
+    # Execution succeeded
+    # --------------------------------------------------------
+
+    completed_count = (
+        state.get("current_step", 0) + 1
+    )
 
     return {
         "status": "executing",
         "current_step": completed_count,
         "execution_results": execution_results,
+
+        # Store the most recent tool information so the
+        # verifier can independently inspect the result.
         "tool_name": result.get("tool_name"),
+        "tool_input": result.get(
+            "tool_input",
+            {},
+        ),
         "tool_result": result.get("tool_result"),
+
         "verified": False,
         "verification_message": (
-            "Step execution succeeded but has not yet "
-            "been independently verified."
+            "Execution succeeded. Waiting for "
+            "independent verification."
         ),
+
         "ui_event": "methu_step_completed",
         "ui_payload": {
             "step_id": step["step_id"],
@@ -286,58 +336,210 @@ def execute_step_node(state: MethuState) -> dict:
             "instruction": instruction,
             "result": step_result,
         },
+
         "error": None,
     }
 
 
 # ============================================================
-# Complete Multi-Step Task
+# Verify ONE Step
+# ============================================================
+
+
+def verify_step_node(state: MethuState) -> dict:
+    """
+    Independently verify the most recently executed step.
+
+    Currently supported:
+        open_app
+            -> Windows process verification
+
+    Browser page verification will be implemented separately.
+    """
+
+    tool_name = state.get("tool_name")
+    tool_result = state.get("tool_result")
+
+    try:
+        verification = verify_tool_result(
+            tool_name=tool_name,
+            tool_result=tool_result,
+        )
+
+    except Exception as exc:
+        verification = {
+            "verified": False,
+            "method": "verification_error",
+            "message": str(exc),
+        }
+
+    verified = verification.get(
+        "verified",
+        False,
+    )
+
+    execution_results = list(
+        state.get(
+            "execution_results",
+            [],
+        )
+    )
+
+    # --------------------------------------------------------
+    # Attach verification evidence to latest step
+    # --------------------------------------------------------
+
+    if execution_results:
+        latest_result = execution_results[-1]
+
+        execution_results[-1] = {
+            **latest_result,
+            "verified": verified,
+            "verification": verification,
+        }
+
+    return {
+        "status": "verifying",
+        "verified": verified,
+        "verification_message": verification.get(
+            "message",
+            "",
+        ),
+        "execution_results": execution_results,
+
+        "ui_event": (
+            "methu_step_verified"
+            if verified
+            else "methu_step_unverified"
+        ),
+
+        "ui_payload": {
+            "verified": verified,
+            "verification": verification,
+        },
+    }
+
+
+# ============================================================
+# Complete Task
 # ============================================================
 
 
 def complete_task_node(state: MethuState) -> dict:
-    plan = state.get("structured_plan", [])
-    results = state.get("execution_results", [])
+    """
+    Finish execution after all plan steps have run.
+
+    The whole task is verified only when every individual
+    step has independent verification.
+    """
+
+    plan = state.get(
+        "structured_plan",
+        [],
+    )
+
+    results = state.get(
+        "execution_results",
+        [],
+    )
+
+    all_verified = (
+        len(results) > 0
+        and all(
+            result.get(
+                "verified",
+                False,
+            )
+            for result in results
+        )
+    )
+
+    if all_verified:
+        verification_message = (
+            "All planned steps executed and were "
+            "independently verified."
+        )
+
+        final_response = (
+            f"I completed and verified all "
+            f"{len(results)} planned steps."
+        )
+
+    else:
+        verification_message = (
+            "All planned steps executed, but one or more "
+            "steps could not yet be independently verified."
+        )
+
+        final_response = (
+            f"I completed all {len(results)} planned steps, "
+            "but I could not independently verify every step."
+        )
 
     return {
         "status": "completed",
         "current_plan_step": None,
-        "verified": False,
+
+        "verified": all_verified,
+
         "verification_message": (
-            "All planned steps executed successfully, but "
-            "independent observation and verification have "
-            "not yet been implemented."
+            verification_message
         ),
-        "final_response": (
-            f"I completed all {len(results)} planned steps."
-        ),
+
+        "final_response": final_response,
+
         "ui_event": "multi_step_completed",
+
         "ui_payload": {
             "completed_steps": len(results),
             "total_steps": len(plan),
+            "verified": all_verified,
             "results": results,
         },
+
         "error": None,
     }
 
 
 # ============================================================
-# Failed Multi-Step Task
+# Failed Task
 # ============================================================
 
 
 def failed_task_node(state: MethuState) -> dict:
+    """
+    Final failure node.
+    """
+
+    error = state.get(
+        "error",
+        "Unknown execution error.",
+    )
+
     return {
         "status": "failed",
         "verified": False,
+
+        "verification_message": (
+            "Task execution failed."
+        ),
+
         "final_response": (
             "I couldn't complete the entire task."
         ),
+
         "ui_event": "methu_execution_failed",
+
         "ui_payload": {
-            "error": state.get("error"),
-            "current_step": state.get("current_step", 0),
-            "results": state.get("execution_results", []),
+            "error": error,
+            "current_step": state.get(
+                "current_step",
+                0,
+            ),
+            "results": state.get(
+                "execution_results",
+                [],
+            ),
         },
     }
 
@@ -347,15 +549,20 @@ def failed_task_node(state: MethuState) -> dict:
 # ============================================================
 
 
-def route_after_orchestrator(state: MethuState) -> str:
+def route_after_orchestrator(
+    state: MethuState,
+) -> str:
     """
-    The orchestrator understands/routs the request.
+    Multi-action requests use the structured planner.
 
-    Multi-action requests go to the authoritative planner.
-    Simple requests continue directly to specialist agents.
+    Simple requests continue directly to their specialist
+    agent for now.
     """
 
-    initial_plan = state.get("plan", [])
+    initial_plan = state.get(
+        "plan",
+        [],
+    )
 
     if len(initial_plan) > 1:
         return "planner"
@@ -366,7 +573,13 @@ def route_after_orchestrator(state: MethuState) -> str:
     )
 
 
-def route_after_planning(state: MethuState) -> str:
+def route_after_planning(
+    state: MethuState,
+) -> str:
+    """
+    Planner -> first execution step.
+    """
+
     if state.get("status") == "failed":
         return "failed"
 
@@ -376,20 +589,48 @@ def route_after_planning(state: MethuState) -> str:
     return "load_step"
 
 
-def route_after_execution(state: MethuState) -> str:
+def route_after_execution(
+    state: MethuState,
+) -> str:
     """
-    After executing one step:
-
-    failed      -> failed node
-    more steps  -> load next step
-    no steps    -> complete
+    Successful execution always goes through verification.
     """
 
     if state.get("status") == "failed":
         return "failed"
 
-    plan = state.get("structured_plan", [])
-    current_step = state.get("current_step", 0)
+    return "verify"
+
+
+def route_after_verification(
+    state: MethuState,
+) -> str:
+    """
+    Decide whether another step remains.
+
+    IMPORTANT:
+
+    An unverified step does NOT currently cause retry or
+    replan. We are intentionally adding that in the next
+    stage.
+
+    This allows unsupported verification methods, such as
+    browser-page verification, to remain truthful without
+    breaking execution.
+    """
+
+    if state.get("status") == "failed":
+        return "failed"
+
+    plan = state.get(
+        "structured_plan",
+        [],
+    )
+
+    current_step = state.get(
+        "current_step",
+        0,
+    )
 
     if current_step < len(plan):
         return "next_step"
@@ -398,16 +639,17 @@ def route_after_execution(state: MethuState) -> str:
 
 
 # ============================================================
-# Build Graph
+# Build LangGraph
 # ============================================================
 
 
 builder = StateGraph(MethuState)
 
 
-# ------------------------------------------------------------
-# Core
-# ------------------------------------------------------------
+# ============================================================
+# Core Nodes
+# ============================================================
+
 
 builder.add_node(
     "orchestrator",
@@ -415,9 +657,10 @@ builder.add_node(
 )
 
 
-# ------------------------------------------------------------
-# Direct specialist agents
-# ------------------------------------------------------------
+# ============================================================
+# Direct Specialist Agents
+# ============================================================
+
 
 builder.add_node(
     "computer",
@@ -465,9 +708,10 @@ builder.add_node(
 )
 
 
-# ------------------------------------------------------------
-# Agentic execution loop
-# ------------------------------------------------------------
+# ============================================================
+# Agentic Execution Nodes
+# ============================================================
+
 
 builder.add_node(
     "planner",
@@ -485,6 +729,11 @@ builder.add_node(
 )
 
 builder.add_node(
+    "verify_step",
+    verify_step_node,
+)
+
+builder.add_node(
     "complete",
     complete_task_node,
 )
@@ -496,8 +745,9 @@ builder.add_node(
 
 
 # ============================================================
-# Entry
+# Graph Entry
 # ============================================================
+
 
 builder.add_edge(
     START,
@@ -509,19 +759,23 @@ builder.add_edge(
 # Orchestrator Routing
 # ============================================================
 
+
 builder.add_conditional_edges(
     "orchestrator",
     route_after_orchestrator,
     {
         "planner": "planner",
+
         "computer": "computer",
-        "coding": "coding",
         "browser": "browser",
-        "research": "research",
         "news": "news",
+
+        "coding": "coding",
+        "research": "research",
         "vision": "vision",
         "memory": "memory",
         "system": "system",
+
         "orchestrator": "conversation",
     },
 )
@@ -530,6 +784,7 @@ builder.add_conditional_edges(
 # ============================================================
 # Planner Routing
 # ============================================================
+
 
 builder.add_conditional_edges(
     "planner",
@@ -542,8 +797,9 @@ builder.add_conditional_edges(
 
 
 # ============================================================
-# Load Step -> Execute
+# Load Step -> Execute Step
 # ============================================================
+
 
 builder.add_edge(
     "load_step",
@@ -552,12 +808,28 @@ builder.add_edge(
 
 
 # ============================================================
-# Execute -> Next / Complete / Failed
+# Execute Step -> Verify Step
 # ============================================================
+
 
 builder.add_conditional_edges(
     "execute_step",
     route_after_execution,
+    {
+        "verify": "verify_step",
+        "failed": "failed",
+    },
+)
+
+
+# ============================================================
+# Verify -> Next Step / Complete / Failed
+# ============================================================
+
+
+builder.add_conditional_edges(
+    "verify_step",
+    route_after_verification,
     {
         "next_step": "load_step",
         "complete": "complete",
@@ -570,21 +842,57 @@ builder.add_conditional_edges(
 # Direct Agent Endpoints
 # ============================================================
 
-builder.add_edge("computer", END)
-builder.add_edge("browser", END)
-builder.add_edge("news", END)
 
-builder.add_edge("coding", END)
-builder.add_edge("research", END)
-builder.add_edge("vision", END)
-builder.add_edge("memory", END)
-builder.add_edge("system", END)
-builder.add_edge("conversation", END)
+builder.add_edge(
+    "computer",
+    END,
+)
+
+builder.add_edge(
+    "browser",
+    END,
+)
+
+builder.add_edge(
+    "news",
+    END,
+)
+
+builder.add_edge(
+    "coding",
+    END,
+)
+
+builder.add_edge(
+    "research",
+    END,
+)
+
+builder.add_edge(
+    "vision",
+    END,
+)
+
+builder.add_edge(
+    "memory",
+    END,
+)
+
+builder.add_edge(
+    "system",
+    END,
+)
+
+builder.add_edge(
+    "conversation",
+    END,
+)
 
 
 # ============================================================
 # Execution Endpoints
 # ============================================================
+
 
 builder.add_edge(
     "complete",
@@ -598,7 +906,8 @@ builder.add_edge(
 
 
 # ============================================================
-# Compile
+# Compile METHU
 # ============================================================
+
 
 methu_graph = builder.compile()
