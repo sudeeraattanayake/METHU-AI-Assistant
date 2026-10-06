@@ -13,6 +13,7 @@ LOW_RISK_ACTIONS = {
     "open_website",
     "web_search",
     "news_search",
+    "type_text",
     "read_file",
     "list_files",
     "create_file",
@@ -23,6 +24,7 @@ LOW_RISK_ACTIONS = {
     "get_system_info",
     "check_battery",
     "check_network",
+    "click_element",
 }
 
 

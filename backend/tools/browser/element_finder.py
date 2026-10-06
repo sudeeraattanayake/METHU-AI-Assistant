@@ -4,15 +4,18 @@ from backend.tools.browser.dom_observer import observe_dom
 
 
 def _normalize(value: Any) -> str:
-    """
-    Convert a DOM value into normalized lowercase text
-    for semantic matching.
-    """
-
     if value is None:
         return ""
 
     return str(value).strip().lower()
+
+
+def _tokenize(value: str) -> set[str]:
+    return {
+        token
+        for token in _normalize(value).split()
+        if token
+    }
 
 
 def _score_element(
@@ -20,8 +23,14 @@ def _score_element(
     query: str,
 ) -> int:
     """
-    Score how closely an interactive DOM element
-    matches a natural-language query.
+    Score an interactive DOM element against a
+    natural-language description.
+
+    The scoring strongly rewards exact semantic matches
+    and penalizes conflicting labels such as:
+
+        query: "search button"
+        element: aria-label="Clear search query"
     """
 
     query = _normalize(query)
@@ -29,7 +38,7 @@ def _score_element(
     if not query:
         return 0
 
-    score = 0
+    query_tokens = _tokenize(query)
 
     tag = _normalize(element.get("tag"))
     role = _normalize(element.get("role"))
@@ -40,124 +49,175 @@ def _score_element(
     name = _normalize(element.get("name"))
     element_id = _normalize(element.get("id"))
 
-    # ---------------------------------------------
-    # Strong exact semantic matches
-    # ---------------------------------------------
+    score = 0
+
+    # -------------------------------------------------
+    # Exact matches
+    # -------------------------------------------------
 
     if query == aria_label:
-        score += 100
+        score += 150
 
     if query == placeholder:
-        score += 95
+        score += 140
 
     if query == text:
-        score += 90
+        score += 130
 
     if query == name:
-        score += 85
+        score += 120
 
     if query == element_id:
-        score += 80
+        score += 110
 
-    # ---------------------------------------------
-    # Partial matches
-    # ---------------------------------------------
+    # -------------------------------------------------
+    # Query concepts
+    # -------------------------------------------------
 
-    if query in aria_label and aria_label:
-        score += 50
+    wants_button = "button" in query_tokens
 
-    if query in placeholder and placeholder:
-        score += 45
-
-    if query in text and text:
-        score += 40
-
-    if query in name and name:
-        score += 35
-
-    if query in element_id and element_id:
-        score += 30
-
-    # ---------------------------------------------
-    # Token matching
-    # Example:
-    # "search textbox"
-    # ---------------------------------------------
-
-    query_tokens = set(query.split())
-
-    searchable_text = " ".join(
-        [
-            tag,
-            role,
-            element_type,
-            text,
-            aria_label,
-            placeholder,
-            name,
-            element_id,
-        ]
+    wants_textbox = bool(
+        query_tokens
+        & {
+            "textbox",
+            "input",
+            "field",
+            "box",
+        }
     )
 
-    for token in query_tokens:
-        if token and token in searchable_text:
-            score += 10
+    wants_link = "link" in query_tokens
 
-    # ---------------------------------------------
-    # Semantic aliases
-    # ---------------------------------------------
+    wants_search = "search" in query_tokens
 
-    textbox_words = {
-        "textbox",
-        "input",
-        "field",
-        "box",
-    }
+    # -------------------------------------------------
+    # Element type matching
+    # -------------------------------------------------
 
-    button_words = {
-        "button",
-        "submit",
-    }
+    if wants_button:
+        if tag == "button":
+            score += 70
 
-    link_words = {
-        "link",
-    }
+        if role == "button":
+            score += 70
 
-    if query_tokens & textbox_words:
+        # Penalize inputs when explicitly asking
+        # for a button.
         if tag in {"input", "textarea"}:
-            score += 35
+            score -= 60
+
+    if wants_textbox:
+        if tag in {"input", "textarea"}:
+            score += 70
 
         if role in {
             "textbox",
             "searchbox",
             "combobox",
         }:
-            score += 35
+            score += 70
 
-    if query_tokens & button_words:
         if tag == "button":
-            score += 35
+            score -= 60
 
-        if role == "button":
-            score += 35
-
-    if query_tokens & link_words:
+    if wants_link:
         if tag == "a":
-            score += 35
+            score += 70
 
         if role == "link":
+            score += 70
+
+    # -------------------------------------------------
+    # Search semantics
+    # -------------------------------------------------
+
+    if wants_search:
+        if aria_label == "search":
+            score += 120
+
+        elif "search" in aria_label:
             score += 35
 
-    # Search-specific bonus
-    if "search" in query_tokens:
-        if "search" in placeholder:
-            score += 40
+        if placeholder == "search":
+            score += 100
 
-        if "search" in aria_label:
-            score += 40
-
-        if "search" in name:
+        elif "search" in placeholder:
             score += 30
+
+        if name == "search_query":
+            score += 90
+
+        elif "search" in name:
+            score += 30
+
+        if text == "search":
+            score += 100
+
+    # -------------------------------------------------
+    # Conflict penalties
+    # -------------------------------------------------
+
+    # YouTube example:
+    # aria-label="Clear search query"
+    #
+    # This contains "search", but it is NOT the
+    # requested Search button.
+    conflict_words = {
+        "clear",
+        "close",
+        "cancel",
+        "delete",
+        "remove",
+        "reset",
+    }
+
+    element_tokens = _tokenize(
+        " ".join(
+            [
+                text,
+                aria_label,
+                placeholder,
+                name,
+                element_id,
+            ]
+        )
+    )
+
+    conflicts = (
+        conflict_words
+        & element_tokens
+    )
+
+    if conflicts and not (
+        conflicts & query_tokens
+    ):
+        score -= 150
+
+    # -------------------------------------------------
+    # Generic token overlap
+    # -------------------------------------------------
+
+    searchable_tokens = _tokenize(
+        " ".join(
+            [
+                tag,
+                role,
+                element_type,
+                text,
+                aria_label,
+                placeholder,
+                name,
+                element_id,
+            ]
+        )
+    )
+
+    overlap = (
+        query_tokens
+        & searchable_tokens
+    )
+
+    score += len(overlap) * 15
 
     return score
 
@@ -168,10 +228,7 @@ def _build_locator_hint(
     """
     Build a stable locator hint.
 
-    Priority:
-    name -> aria-label -> placeholder -> id -> text
-
-    We intentionally do not rely primarily on DOM index.
+    Prefer semantic attributes rather than DOM index.
     """
 
     name = element.get("name")
@@ -182,7 +239,9 @@ def _build_locator_hint(
             "value": name,
         }
 
-    aria_label = element.get("aria_label")
+    aria_label = element.get(
+        "aria_label"
+    )
 
     if aria_label:
         return {
@@ -190,7 +249,9 @@ def _build_locator_hint(
             "value": aria_label,
         }
 
-    placeholder = element.get("placeholder")
+    placeholder = element.get(
+        "placeholder"
+    )
 
     if placeholder:
         return {
@@ -224,23 +285,13 @@ def find_element(
     query: str,
     max_elements: int = 100,
 ) -> dict[str, Any]:
-    """
-    Find the interactive DOM element that best matches
-    a natural-language description.
-
-    Examples:
-
-        find_element("search textbox")
-
-        find_element("search button")
-
-        find_element("sign in link")
-    """
 
     if not query or not query.strip():
         return {
             "success": False,
-            "message": "Element query cannot be empty.",
+            "message": (
+                "Element query cannot be empty."
+            ),
             "element": None,
             "locator": None,
         }
@@ -269,7 +320,8 @@ def find_element(
         return {
             "success": False,
             "message": (
-                "No visible interactive elements found."
+                "No visible interactive "
+                "elements found."
             ),
             "element": None,
             "locator": None,
@@ -278,6 +330,7 @@ def find_element(
     scored_elements = []
 
     for element in elements:
+
         score = _score_element(
             element,
             query,
@@ -295,7 +348,8 @@ def find_element(
         return {
             "success": False,
             "message": (
-                f'No interactive element matched "{query}".'
+                f'No interactive element matched '
+                f'"{query}".'
             ),
             "element": None,
             "locator": None,
@@ -322,6 +376,7 @@ def find_element(
         "element": element,
         "locator": locator,
         "message": (
-            f'Found an element matching "{query}".'
+            f'Found an element matching '
+            f'"{query}".'
         ),
     }
