@@ -11,6 +11,13 @@ from backend.agents.browser_agent import browser_agent_node
 
 
 # ============================================================
+# Recovery Configuration
+# ============================================================
+
+DEFAULT_MAX_RETRIES = 2
+
+
+# ============================================================
 # Temporary Specialist Agents
 # ============================================================
 
@@ -102,6 +109,10 @@ def planning_node(state: MethuState) -> dict:
             "structured_plan": [],
             "execution_results": [],
             "current_step": 0,
+            "retry_count": 0,
+            "max_retries": DEFAULT_MAX_RETRIES,
+            "retry_reason": None,
+            "replan_count": 0,
         }
 
     try:
@@ -114,6 +125,10 @@ def planning_node(state: MethuState) -> dict:
                 "structured_plan": [],
                 "execution_results": [],
                 "current_step": 0,
+                "retry_count": 0,
+                "max_retries": DEFAULT_MAX_RETRIES,
+                "retry_reason": None,
+                "replan_count": 0,
             }
 
         structured_plan = [
@@ -127,13 +142,33 @@ def planning_node(state: MethuState) -> dict:
             "execution_results": [],
             "current_step": 0,
             "current_plan_step": None,
+
+            # Recovery state
+            "retry_count": 0,
+            "max_retries": state.get(
+                "max_retries",
+                DEFAULT_MAX_RETRIES,
+            ),
+            "retry_reason": None,
+            "replan_count": state.get(
+                "replan_count",
+                0,
+            ),
+
+            # Verification state
             "verified": False,
             "verification_message": "",
+
             "error": None,
+
             "ui_event": "methu_plan_created",
             "ui_payload": {
                 "goal": plan.goal,
                 "steps": structured_plan,
+                "max_retries": state.get(
+                    "max_retries",
+                    DEFAULT_MAX_RETRIES,
+                ),
             },
         }
 
@@ -144,6 +179,9 @@ def planning_node(state: MethuState) -> dict:
             "structured_plan": [],
             "execution_results": [],
             "current_step": 0,
+            "retry_count": 0,
+            "max_retries": DEFAULT_MAX_RETRIES,
+            "retry_reason": None,
             "verified": False,
             "ui_event": "methu_error",
             "ui_payload": {
@@ -160,6 +198,9 @@ def planning_node(state: MethuState) -> dict:
 def load_step_node(state: MethuState) -> dict:
     """
     Load the next structured plan step.
+
+    During a retry, current_step is moved back to the failed
+    step before this node is entered.
     """
 
     plan = state.get("structured_plan", [])
@@ -178,11 +219,26 @@ def load_step_node(state: MethuState) -> dict:
         "status": "executing",
         "verified": False,
         "verification_message": "",
-        "ui_event": "methu_step_started",
+        "error": None,
+
+        "ui_event": (
+            "methu_step_retry_started"
+            if state.get("retry_count", 0) > 0
+            else "methu_step_started"
+        ),
+
         "ui_payload": {
             "step_id": step["step_id"],
             "agent": step["agent"],
             "instruction": step["instruction"],
+            "retry_count": state.get(
+                "retry_count",
+                0,
+            ),
+            "max_retries": state.get(
+                "max_retries",
+                DEFAULT_MAX_RETRIES,
+            ),
         },
     }
 
@@ -271,6 +327,12 @@ def execute_step_node(state: MethuState) -> dict:
             {},
         ),
 
+        # Track which execution attempt produced this result.
+        "attempt": state.get(
+            "retry_count",
+            0,
+        ) + 1,
+
         # Verification happens in the next graph node.
         "verified": False,
         "verification": None,
@@ -279,7 +341,7 @@ def execute_step_node(state: MethuState) -> dict:
     execution_results.append(step_result)
 
     # --------------------------------------------------------
-    # Execution failed
+    # Execution failed before verification
     # --------------------------------------------------------
 
     if result.get("status") != "completed":
@@ -293,6 +355,10 @@ def execute_step_node(state: MethuState) -> dict:
             "verified": False,
             "verification_message": (
                 "Execution failed before verification."
+            ),
+            "retry_reason": (
+                result.get("error")
+                or "Execution failed before verification."
             ),
             "ui_event": "methu_step_failed",
             "ui_payload": {
@@ -334,6 +400,10 @@ def execute_step_node(state: MethuState) -> dict:
             "step_id": step["step_id"],
             "agent": agent,
             "instruction": instruction,
+            "attempt": state.get(
+                "retry_count",
+                0,
+            ) + 1,
             "result": step_result,
         },
 
@@ -350,11 +420,8 @@ def verify_step_node(state: MethuState) -> dict:
     """
     Independently verify the most recently executed step.
 
-    Currently supported:
-        open_app
-            -> Windows process verification
-
-    Browser page verification will be implemented separately.
+    Supported verification is delegated to
+    backend.core.verifier.verify_tool_result().
     """
 
     tool_name = state.get("tool_name")
@@ -386,7 +453,7 @@ def verify_step_node(state: MethuState) -> dict:
     )
 
     # --------------------------------------------------------
-    # Attach verification evidence to latest step
+    # Attach verification evidence to latest attempt
     # --------------------------------------------------------
 
     if execution_results:
@@ -398,24 +465,172 @@ def verify_step_node(state: MethuState) -> dict:
             "verification": verification,
         }
 
+    # --------------------------------------------------------
+    # Verification succeeded
+    # --------------------------------------------------------
+
+    if verified:
+        return {
+            "status": "verifying",
+            "verified": True,
+            "verification_message": verification.get(
+                "message",
+                "",
+            ),
+            "execution_results": execution_results,
+
+            # Successful step resets per-step retry state.
+            "retry_count": 0,
+            "retry_reason": None,
+
+            "ui_event": "methu_step_verified",
+
+            "ui_payload": {
+                "verified": True,
+                "verification": verification,
+            },
+        }
+
+    # --------------------------------------------------------
+    # Verification failed
+    # --------------------------------------------------------
+
+    failure_reason = verification.get(
+        "message",
+        "Step could not be independently verified.",
+    )
+
     return {
         "status": "verifying",
-        "verified": verified,
-        "verification_message": verification.get(
-            "message",
-            "",
-        ),
+        "verified": False,
+        "verification_message": failure_reason,
         "execution_results": execution_results,
 
-        "ui_event": (
-            "methu_step_verified"
-            if verified
-            else "methu_step_unverified"
-        ),
+        "retry_reason": failure_reason,
+
+        "ui_event": "methu_step_unverified",
 
         "ui_payload": {
-            "verified": verified,
+            "verified": False,
             "verification": verification,
+            "retry_count": state.get(
+                "retry_count",
+                0,
+            ),
+            "max_retries": state.get(
+                "max_retries",
+                DEFAULT_MAX_RETRIES,
+            ),
+        },
+    }
+
+
+# ============================================================
+# Retry Failed Step
+# ============================================================
+
+
+def retry_step_node(state: MethuState) -> dict:
+    """
+    Prepare the most recently failed verification step
+    for another execution attempt.
+
+    execute_step_node increments current_step before
+    verification, therefore retry must move the pointer
+    back by one.
+
+    The failed attempt is removed from execution_results
+    before retrying so final task verification represents
+    the final result of each plan step rather than counting
+    obsolete failed attempts as completed steps.
+    """
+
+    current_step = state.get(
+        "current_step",
+        0,
+    )
+
+    retry_count = state.get(
+        "retry_count",
+        0,
+    )
+
+    max_retries = state.get(
+        "max_retries",
+        DEFAULT_MAX_RETRIES,
+    )
+
+    retry_reason = state.get(
+        "retry_reason",
+        "Verification failed.",
+    )
+
+    # Move back to the failed step.
+    failed_step_index = max(
+        current_step - 1,
+        0,
+    )
+
+    plan = state.get(
+        "structured_plan",
+        [],
+    )
+
+    failed_step = None
+
+    if failed_step_index < len(plan):
+        failed_step = plan[failed_step_index]
+
+    # Remove the failed attempt from final step results.
+    # We keep the retry information in state/UI for now.
+    execution_results = list(
+        state.get(
+            "execution_results",
+            [],
+        )
+    )
+
+    if execution_results:
+        execution_results.pop()
+
+    new_retry_count = retry_count + 1
+
+    return {
+        "status": "observing",
+
+        # Point back to the failed plan step.
+        "current_step": failed_step_index,
+        "current_plan_step": None,
+
+        "execution_results": execution_results,
+
+        "retry_count": new_retry_count,
+        "max_retries": max_retries,
+        "retry_reason": retry_reason,
+
+        "verified": False,
+
+        "verification_message": (
+            f"Verification failed. Retrying step "
+            f"{failed_step_index + 1}. "
+            f"Retry {new_retry_count}/{max_retries}."
+        ),
+
+        # Clear previous tool state so the next execution
+        # produces fresh evidence.
+        "tool_name": None,
+        "tool_input": {},
+        "tool_result": None,
+
+        "error": None,
+
+        "ui_event": "methu_step_retrying",
+
+        "ui_payload": {
+            "step": failed_step,
+            "retry_count": new_retry_count,
+            "max_retries": max_retries,
+            "reason": retry_reason,
         },
     }
 
@@ -429,8 +644,8 @@ def complete_task_node(state: MethuState) -> dict:
     """
     Finish execution after all plan steps have run.
 
-    The whole task is verified only when every individual
-    step has independent verification.
+    The whole task is verified only when every final
+    individual step result has independent verification.
     """
 
     plan = state.get(
@@ -444,7 +659,8 @@ def complete_task_node(state: MethuState) -> dict:
     )
 
     all_verified = (
-        len(results) > 0
+        len(results) == len(plan)
+        and len(results) > 0
         and all(
             result.get(
                 "verified",
@@ -467,13 +683,14 @@ def complete_task_node(state: MethuState) -> dict:
 
     else:
         verification_message = (
-            "All planned steps executed, but one or more "
-            "steps could not yet be independently verified."
+            "Task execution finished, but one or more "
+            "planned steps could not be independently verified."
         )
 
         final_response = (
-            f"I completed all {len(results)} planned steps, "
-            "but I could not independently verify every step."
+            f"I executed {len(results)} of {len(plan)} "
+            "final planned step results, but I could not "
+            "independently verify the entire task."
         )
 
     return {
@@ -487,6 +704,9 @@ def complete_task_node(state: MethuState) -> dict:
         ),
 
         "final_response": final_response,
+
+        "retry_count": 0,
+        "retry_reason": None,
 
         "ui_event": "multi_step_completed",
 
@@ -509,6 +729,9 @@ def complete_task_node(state: MethuState) -> dict:
 def failed_task_node(state: MethuState) -> dict:
     """
     Final failure node.
+
+    This node is reached when execution fails or when a
+    step remains unverified after the maximum retry limit.
     """
 
     error = state.get(
@@ -516,22 +739,42 @@ def failed_task_node(state: MethuState) -> dict:
         "Unknown execution error.",
     )
 
+    retry_reason = state.get(
+        "retry_reason",
+    )
+
+    if retry_reason and not error:
+        error = retry_reason
+
     return {
         "status": "failed",
         "verified": False,
 
         "verification_message": (
-            "Task execution failed."
+            state.get(
+                "verification_message",
+                "Task execution failed.",
+            )
         ),
 
         "final_response": (
-            "I couldn't complete the entire task."
+            "I couldn't safely verify and complete "
+            "the entire task."
         ),
 
         "ui_event": "methu_execution_failed",
 
         "ui_payload": {
             "error": error,
+            "retry_reason": retry_reason,
+            "retry_count": state.get(
+                "retry_count",
+                0,
+            ),
+            "max_retries": state.get(
+                "max_retries",
+                DEFAULT_MAX_RETRIES,
+            ),
             "current_step": state.get(
                 "current_step",
                 0,
@@ -594,6 +837,9 @@ def route_after_execution(
 ) -> str:
     """
     Successful execution always goes through verification.
+
+    Execution failures currently terminate immediately.
+    Recovery from verification failure is handled separately.
     """
 
     if state.get("status") == "failed":
@@ -606,21 +852,27 @@ def route_after_verification(
     state: MethuState,
 ) -> str:
     """
-    Decide whether another step remains.
+    Route based on independent verification.
 
-    IMPORTANT:
+    Verified:
+        -> next step
+        -> or complete
 
-    An unverified step does NOT currently cause retry or
-    replan. We are intentionally adding that in the next
-    stage.
+    Unverified:
+        -> retry same step while retry budget remains
+        -> fail after retry limit
 
-    This allows unsupported verification methods, such as
-    browser-page verification, to remain truthful without
-    breaking execution.
+    Replanning will be added after this retry layer is
+    independently tested.
     """
 
     if state.get("status") == "failed":
         return "failed"
+
+    verified = state.get(
+        "verified",
+        False,
+    )
 
     plan = state.get(
         "structured_plan",
@@ -632,10 +884,34 @@ def route_after_verification(
         0,
     )
 
-    if current_step < len(plan):
-        return "next_step"
+    # --------------------------------------------------------
+    # Verification succeeded
+    # --------------------------------------------------------
 
-    return "complete"
+    if verified:
+        if current_step < len(plan):
+            return "next_step"
+
+        return "complete"
+
+    # --------------------------------------------------------
+    # Verification failed
+    # --------------------------------------------------------
+
+    retry_count = state.get(
+        "retry_count",
+        0,
+    )
+
+    max_retries = state.get(
+        "max_retries",
+        DEFAULT_MAX_RETRIES,
+    )
+
+    if retry_count < max_retries:
+        return "retry"
+
+    return "failed"
 
 
 # ============================================================
@@ -734,6 +1010,11 @@ builder.add_node(
 )
 
 builder.add_node(
+    "retry_step",
+    retry_step_node,
+)
+
+builder.add_node(
     "complete",
     complete_task_node,
 )
@@ -823,7 +1104,7 @@ builder.add_conditional_edges(
 
 
 # ============================================================
-# Verify -> Next Step / Complete / Failed
+# Verify -> Next / Retry / Complete / Failed
 # ============================================================
 
 
@@ -832,9 +1113,21 @@ builder.add_conditional_edges(
     route_after_verification,
     {
         "next_step": "load_step",
+        "retry": "retry_step",
         "complete": "complete",
         "failed": "failed",
     },
+)
+
+
+# ============================================================
+# Retry -> Load Same Step
+# ============================================================
+
+
+builder.add_edge(
+    "retry_step",
+    "load_step",
 )
 
 
