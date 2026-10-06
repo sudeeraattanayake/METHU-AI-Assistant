@@ -4,7 +4,10 @@ from pydantic import BaseModel, Field
 
 from backend.core.llm import llm
 from backend.core.state import MethuState
-from backend.tools.browser.navigation import navigate_to
+from backend.tools.browser.navigation import normalize_url
+from backend.tools.browser.playwright_controller import (
+    navigate_managed_browser,
+)
 
 
 class BrowserAction(BaseModel):
@@ -76,7 +79,9 @@ return action="unknown".
     if decision.action == "unknown":
         return {
             "status": "completed",
-            "final_response": "That browser action isn't supported yet.",
+            "final_response": (
+                "That browser action isn't supported yet."
+            ),
             "ui_event": "browser_action_unsupported",
             "ui_payload": {
                 "message": decision.explanation,
@@ -87,39 +92,85 @@ return action="unknown".
         if not decision.target:
             return {
                 "status": "failed",
-                "error": "Browser Agent did not provide a target.",
+                "error": (
+                    "Browser Agent did not provide a target."
+                ),
             }
 
-        result = navigate_to(decision.target)
+        url = normalize_url(decision.target)
 
-        if not result["success"]:
+        if not url:
             return {
                 "status": "failed",
                 "final_response": (
-                    "I couldn't open that website. "
-                    f"{result.get('error', 'Unknown error')}"
+                    "I couldn't open that website because "
+                    "the target is invalid or unsupported."
                 ),
                 "tool_name": "open_website",
                 "tool_input": {
                     "target": decision.target,
+                },
+                "tool_result": {
+                    "success": False,
+                    "action": "open_website",
+                    "target": decision.target,
+                    "error": (
+                        "Invalid or unsupported website."
+                    ),
+                },
+                "ui_event": "methu_error",
+                "ui_payload": {
+                    "target": decision.target,
+                },
+            }
+
+        result = navigate_managed_browser(url)
+
+        if not result.get("success"):
+            return {
+                "status": "failed",
+                "final_response": (
+                    "I couldn't navigate the METHU browser. "
+                    f"{result.get('message', 'Unknown error')}"
+                ),
+                "tool_name": "open_website",
+                "tool_input": {
+                    "target": decision.target,
+                    "url": url,
                 },
                 "tool_result": result,
                 "ui_event": "methu_error",
                 "ui_payload": result,
             }
 
+        # Standardize the result for the verifier.
+        tool_result = {
+            "success": True,
+            "action": "open_website",
+            "url": url,
+            "observed_url": result.get("url"),
+            "observed_title": result.get("title"),
+            "page_count": result.get("page_count"),
+            "message": result.get("message"),
+        }
+
         return {
             "status": "completed",
-            "final_response": f"I opened {result['url']}.",
+            "final_response": (
+                f"I navigated the METHU browser to "
+                f"{tool_result['observed_url']}."
+            ),
             "tool_name": "open_website",
             "tool_input": {
                 "target": decision.target,
+                "url": url,
             },
-            "tool_result": result,
+            "tool_result": tool_result,
             "ui_event": "browser_action_completed",
             "ui_payload": {
                 "action": "navigate",
-                "url": result["url"],
+                "url": tool_result["observed_url"],
+                "title": tool_result["observed_title"],
             },
         }
 

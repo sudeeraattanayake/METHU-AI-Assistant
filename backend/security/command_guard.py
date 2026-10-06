@@ -18,7 +18,6 @@ class CommandGuard:
         tool_input: dict[str, Any] | None = None,
         approval_id: str | None = None,
     ) -> dict:
-
         tool_input = tool_input or {}
 
         # ----------------------------------------------------
@@ -77,12 +76,15 @@ class CommandGuard:
                 "authorized": False,
                 "action": action,
                 "risk_level": permission["risk_level"],
-                "reason": f"Approval status is {approval['status']}.",
+                "reason": (
+                    f"Approval status is "
+                    f"{approval['status']}."
+                ),
                 "approval_id": approval_id,
             }
 
         # ----------------------------------------------------
-        # 6. Approval must match the exact action
+        # 6. Approval must match exact action
         # ----------------------------------------------------
 
         if approval["action"] != action:
@@ -90,7 +92,10 @@ class CommandGuard:
                 "authorized": False,
                 "action": action,
                 "risk_level": permission["risk_level"],
-                "reason": "Approval does not match requested action.",
+                "reason": (
+                    "Approval does not match "
+                    "requested action."
+                ),
                 "approval_id": approval_id,
             }
 
@@ -103,7 +108,10 @@ class CommandGuard:
                 "authorized": False,
                 "action": action,
                 "risk_level": permission["risk_level"],
-                "reason": "Approval does not match requested tool input.",
+                "reason": (
+                    "Approval does not match "
+                    "requested tool input."
+                ),
                 "approval_id": approval_id,
             }
 
@@ -120,4 +128,5 @@ class CommandGuard:
         }
 
 
+# Global CommandGuard instance used by METHU tools.
 command_guard = CommandGuard()

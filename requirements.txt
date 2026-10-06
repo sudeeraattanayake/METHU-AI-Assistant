@@ -63,3 +63,5 @@ typing-extensions
 # -------------------------
 tavily-python
 langchain-tavily
+
+playwright

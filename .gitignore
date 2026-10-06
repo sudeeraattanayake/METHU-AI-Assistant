@@ -50,3 +50,6 @@ htmlcov/
 build/
 dist/
 *.egg-info/
+
+# METHU managed Chrome profile
+data/browser_profile/
