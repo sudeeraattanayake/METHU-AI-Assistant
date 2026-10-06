@@ -118,52 +118,56 @@ class MethuState(TypedDict, total=False):
     # Number of times METHU has replanned the current task.
     replan_count: int
 
-    # --------------------------------------------------------
-    # Verification
-    # --------------------------------------------------------
+    # Maximum number of replans allowed before METHU stops safely.
+    max_replans: int
 
-    verified: bool
+# --------------------------------------------------------
+# Verification
+# --------------------------------------------------------
 
-    verification_message: str
 
-    # --------------------------------------------------------
-    # Permission / Security
-    # --------------------------------------------------------
+verified: bool
 
-    requires_approval: bool
+verification_message: str
 
-    approval_granted: bool | None
+# --------------------------------------------------------
+# Permission / Security
+# --------------------------------------------------------
 
-    risk_level: Literal[
-        "low",
-        "medium",
-        "high",
-    ]
+requires_approval: bool
 
-    # --------------------------------------------------------
-    # Memory
-    # --------------------------------------------------------
+approval_granted: bool | None
 
-    memory_context: list[str]
+risk_level: Literal[
+    "low",
+    "medium",
+    "high",
+]
 
-    # --------------------------------------------------------
-    # Vision
-    # --------------------------------------------------------
+# --------------------------------------------------------
+# Memory
+# --------------------------------------------------------
 
-    image_paths: list[str]
+memory_context: list[str]
 
-    screenshot_path: str | None
+# --------------------------------------------------------
+# Vision
+# --------------------------------------------------------
 
-    # --------------------------------------------------------
-    # UI
-    # --------------------------------------------------------
+image_paths: list[str]
 
-    ui_event: str | None
+screenshot_path: str | None
 
-    ui_payload: dict[str, Any]
+# --------------------------------------------------------
+# UI
+# --------------------------------------------------------
 
-    # --------------------------------------------------------
-    # Session
-    # --------------------------------------------------------
+ui_event: str | None
 
-    session_id: str
+ui_payload: dict[str, Any]
+
+# --------------------------------------------------------
+# Session
+# --------------------------------------------------------
+
+session_id: str
