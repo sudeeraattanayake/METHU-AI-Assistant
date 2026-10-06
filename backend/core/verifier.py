@@ -5,6 +5,9 @@ from backend.tools.system.processes import is_app_running
 from backend.tools.browser.playwright_controller import (
     get_active_page_info,
 )
+from backend.tools.browser.browser_verifier import (
+    verify_search_goal,
+)
 
 
 def verify_open_app(
@@ -132,6 +135,54 @@ def verify_open_website(
     }
 
 
+def verify_browser_search(
+    tool_result: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Independently verify that a browser search reached
+    the expected search-result state.
+
+    The Browser Agent may already have verified the
+    operation, but the main METHU graph does not trust
+    that flag alone. It observes the browser again.
+    """
+
+    expected_query = tool_result.get("query")
+
+    if not expected_query:
+        return {
+            "verified": False,
+            "method": "browser_search_goal",
+            "message": (
+                "Browser search result did not contain "
+                "the expected search query."
+            ),
+        }
+
+    verification = verify_search_goal(
+        expected_query
+    )
+
+    return {
+        "verified": verification.get(
+            "verified",
+            False,
+        ),
+        "method": verification.get(
+            "method",
+            "browser_search_goal",
+        ),
+        "message": verification.get(
+            "message",
+            "Browser search verification failed.",
+        ),
+        "observed": verification.get(
+            "observed",
+            {},
+        ),
+    }
+
+
 def verify_tool_result(
     tool_name: str | None,
     tool_result: Any,
@@ -162,6 +213,11 @@ def verify_tool_result(
 
     if tool_name == "open_website":
         return verify_open_website(
+            tool_result
+        )
+
+    if tool_name == "browser_search":
+        return verify_browser_search(
             tool_result
         )
 
