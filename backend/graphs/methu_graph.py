@@ -6,6 +6,12 @@ from backend.agents.orchestrator import orchestrator_node
 from backend.agents.news_agent import news_agent_node
 from backend.agents.computer_agent import computer_agent_node
 from backend.agents.browser_agent import browser_agent_node
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage, HumanMessage
+from dotenv import load_dotenv
+from backend.memory.short_term import short_term_memory
+
+load_dotenv()
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_MAX_REPLANS = 1
 
@@ -38,12 +44,61 @@ def vision_node(state: MethuState) -> dict:
 
 
 def memory_node(state: MethuState) -> dict:
-    return {
-        "status": "completed",
-        "final_response": "Memory Agent selected.",
-        "ui_event": "memory_agent_active",
-        "ui_payload": {"agent": "memory"},
-    }
+    user_input = state.get("user_input", "").strip()
+    session_id = state.get("session_id", "default")
+
+    if not user_input:
+        return {
+            "status": "failed",
+            "final_response": "Please ask me a question.",
+            "ui_event": "methu_speaking",
+            "ui_payload": {"agent": "memory"}
+        }
+
+    history = short_term_memory.get_history(session_id)
+
+    if not history:
+        return {
+            "status": "completed",
+            "final_response": "I don't have any previous conversation history in this session.",
+            "ui_event": "methu_speaking",
+            "ui_payload": {"agent": "memory"}
+        }
+
+    try:
+        response = conversation_llm.invoke([
+            SystemMessage(content=(
+                "You are METHU's memory assistant. "
+                "Answer the user's question using the available "
+                "conversation history. Do not invent memories. "
+                "If the information is missing, say you don't know. "
+                "Respond in the user's language."
+            )),
+            *history,
+            HumanMessage(content=user_input)
+        ])
+
+        answer = response.content
+        if not isinstance(answer, str):
+            answer = str(answer)
+
+        short_term_memory.save_turn(session_id, user_input, answer)
+
+        return {
+            "status": "completed",
+            "final_response": answer,
+            "ui_event": "methu_speaking",
+            "ui_payload": {"agent": "memory"}
+        }
+
+    except Exception as error:
+        print(f"METHU memory error: {error}")
+        return {
+            "status": "failed",
+            "final_response": "I couldn't access conversation memory right now.",
+            "ui_event": "methu_error",
+            "ui_payload": {"agent": "memory"}
+        }
 
 
 def system_node(state: MethuState) -> dict:
@@ -55,15 +110,58 @@ def system_node(state: MethuState) -> dict:
     }
 
 
+conversation_llm = ChatOpenAI(model="gpt-5-mini")
+
+
 def conversation_node(state: MethuState) -> dict:
-    return {
-        "status": "completed",
-        "final_response": (
-            "METHU Orchestrator selected for conversation."
-        ),
-        "ui_event": "methu_speaking",
-        "ui_payload": {"agent": "orchestrator"},
-    }
+    user_input = state.get("user_input", "").strip()
+    session_id = state.get("session_id", "default")
+
+    if not user_input:
+        return {
+            "status": "failed",
+            "final_response": "Please tell me how I can help you.",
+            "ui_event": "methu_speaking",
+            "ui_payload": {"agent": "conversation"}
+        }
+
+    try:
+        history = short_term_memory.get_history(session_id)
+
+        response = conversation_llm.invoke([
+            SystemMessage(content=(
+                "You are METHU, a helpful personal AI assistant. "
+                "Respond naturally in English, Sinhala, or Italian, "
+                "depending on the user's language. "
+                "Use the conversation history to understand context. "
+                "Do not claim to have executed actions unless they "
+                "were actually performed."
+            )),
+            *history,
+            HumanMessage(content=user_input)
+        ])
+
+        answer = response.content
+        if not isinstance(answer, str):
+            answer = str(answer)
+
+        short_term_memory.save_turn(session_id, user_input, answer)
+
+        return {
+            "status": "completed",
+            "final_response": answer,
+            "ui_event": "methu_speaking",
+            "ui_payload": {"agent": "conversation"}
+        }
+
+    except Exception as error:
+        print(f"METHU conversation error: {error}")
+        return {
+            "status": "failed",
+            "final_response": "I'm having trouble responding right now.",
+            "ui_event": "methu_error",
+            "ui_payload": {"agent": "conversation"}
+        }
 
 
 def planning_node(state: MethuState) -> dict:

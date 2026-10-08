@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>METHU AI Assistant</title>
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="stylesheet" href="css/hud.css">
+    <link rel="stylesheet" href="css/hologram.css">
+    <link rel="stylesheet" href="css/animations.css">
+</head>
+
+<body>
+    <main class="methu-app">
+        <header class="methu-header">
+            <h1>METHU</h1>
+            <p>Multimodal Executive & Task Handling Unit</p>
+            <span id="system-status">SYSTEM READY</span>
+        </header>
+
+        <section class="hologram-container" id="hologram-container">
+            <div id="hologram-scene"></div>
+        </section>
+
+        <section class="chat-panel">
+            <h2>Command Center</h2>
+            <div id="chat-messages"></div>
+            <form id="chat-form">
+                <input id="chat-input" type="text" placeholder="Ask METHU anything...">
+                <button type="submit">Send</button>
+            </form>
+        </section>
+
+        <section id="approval-panel" class="approval-panel" hidden>
+            <h2>Authorization Required</h2>
+            <p id="approval-description"></p>
+            <p id="approval-file"></p>
+            <pre id="approval-code"></pre>
+            <button id="approve-button" type="button">Approve</button>
+            <button id="reject-button" type="button">Reject</button>
+        </section>
+    </main>
+
+    <script src="js/app.js"></script>
+    <script src="js/websocket.js"></script>
+</body>
+
+</html>

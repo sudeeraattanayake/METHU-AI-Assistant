@@ -1,0 +1,48 @@
+.approval-panel {
+    margin-top: 24px;
+    padding: 24px;
+    background: rgba(8, 25, 44, 0.95);
+    border: 1px solid #ffb347;
+    border-radius: 16px;
+    box-shadow: 0 0 25px rgba(255, 179, 71, 0.12);
+}
+
+.approval-panel[hidden] {
+    display: none;
+}
+
+.approval-panel h2 {
+    color: #ffb347;
+    margin-top: 0;
+}
+
+#approval-description {
+    color: #e5f7ff;
+}
+
+#approval-file {
+    color: #00e5ff;
+    overflow-wrap: anywhere;
+}
+
+#approval-code {
+    background: #030a12;
+    color: #b8f5ff;
+    padding: 16px;
+    border-radius: 10px;
+    border: 1px solid #24465b;
+    overflow: auto;
+    max-height: 320px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+#approve-button {
+    background: #00d69a;
+    margin-right: 10px;
+}
+
+#reject-button {
+    background: #ff5364;
+    color: white;
+}

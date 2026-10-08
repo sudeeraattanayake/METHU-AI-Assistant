@@ -20,9 +20,7 @@ class ApprovalRequest:
 class ApprovalManager:
     """
     Manages pending METHU approval requests.
-
-    This is currently in-memory.
-    Later we can persist approvals in SQLite.
+    Currently in-memory. SQLite persistence can be added later.
     """
 
     def __init__(self):
@@ -34,7 +32,6 @@ class ApprovalManager:
         description: str,
         tool_input: dict[str, Any] | None = None,
     ) -> dict:
-
         permission = check_permission(action)
 
         request = ApprovalRequest(
@@ -48,35 +45,26 @@ class ApprovalManager:
         )
 
         self.pending[request.approval_id] = request
-
         return asdict(request)
 
     def approve(self, approval_id: str) -> dict | None:
         request = self.pending.get(approval_id)
-
-        if request is None:
+        if request is None or request.status != "pending":
             return None
-
         request.status = "approved"
-
         return asdict(request)
 
     def reject(self, approval_id: str) -> dict | None:
         request = self.pending.get(approval_id)
-
-        if request is None:
+        if request is None or request.status != "pending":
             return None
-
         request.status = "rejected"
-
         return asdict(request)
 
     def get(self, approval_id: str) -> dict | None:
         request = self.pending.get(approval_id)
-
         if request is None:
             return None
-
         return asdict(request)
 
 

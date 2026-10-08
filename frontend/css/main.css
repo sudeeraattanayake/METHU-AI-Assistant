@@ -1,0 +1,127 @@
+:root {
+    --bg: #050b16;
+    --panel: rgba(8, 25, 44, 0.85);
+    --cyan: #00e5ff;
+    --text: #e5f7ff;
+    --muted: #8ba7b8;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: radial-gradient(circle at 50% 30%, #123052, var(--bg) 65%);
+    color: var(--text);
+    font-family: "Segoe UI", Arial, sans-serif;
+}
+
+.methu-app {
+    max-width: 1200px;
+    margin: auto;
+    padding: 24px;
+}
+
+.methu-header {
+    text-align: center;
+    padding: 20px;
+}
+
+.methu-header h1 {
+    color: var(--cyan);
+    font-size: 48px;
+    letter-spacing: 12px;
+    margin: 0;
+}
+
+.methu-header p {
+    color: var(--muted);
+}
+
+#system-status {
+    color: #49ffbc;
+    font-size: 12px;
+    letter-spacing: 3px;
+}
+
+.hologram-container {
+    display: grid;
+    place-items: center;
+    height: 300px;
+    margin: 24px 0;
+    border: 1px solid rgba(0, 229, 255, 0.2);
+    border-radius: 20px;
+    background: radial-gradient(circle, rgba(0, 229, 255, 0.12), transparent 65%);
+}
+
+#hologram-scene {
+    width: 220px;
+    height: 220px;
+    border: 2px solid var(--cyan);
+    border-radius: 50%;
+    box-shadow: 0 0 35px rgba(0, 229, 255, 0.5),
+        inset 0 0 35px rgba(0, 229, 255, 0.2);
+    animation: pulse 3s ease-in-out infinite;
+}
+
+.chat-panel {
+    background: var(--panel);
+    border: 1px solid rgba(0, 229, 255, 0.25);
+    border-radius: 16px;
+    padding: 20px;
+}
+
+#chat-messages {
+    min-height: 150px;
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 16px;
+}
+
+#chat-form {
+    display: flex;
+    gap: 10px;
+}
+
+#chat-input {
+    flex: 1;
+    min-width: 0;
+    padding: 14px;
+    background: #081525;
+    border: 1px solid #286078;
+    border-radius: 8px;
+    color: white;
+}
+
+button {
+    padding: 12px 20px;
+    background: var(--cyan);
+    color: #03111a;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+button:hover {
+    filter: brightness(1.15);
+}
+
+@keyframes pulse {
+    50% {
+        transform: scale(1.05);
+        box-shadow: 0 0 65px rgba(0, 229, 255, 0.7);
+    }
+}
+
+@media (max-width: 600px) {
+    .methu-app {
+        padding: 12px;
+    }
+
+    .methu-header h1 {
+        font-size: 32px;
+    }
+}
