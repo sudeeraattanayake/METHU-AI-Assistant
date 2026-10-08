@@ -53,3 +53,16 @@ dist/
 
 # METHU managed Chrome profile
 data/browser_profile/
+
+# API keys and credentials
+*.pem
+*.key
+credentials.json
+service-account*.json
+
+# Generated voice tests
+methu_voice_test.mp3
+methu_gemini_test.wav
+
+# Local audio outputs
+data/audio/

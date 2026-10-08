@@ -1,0 +1,17 @@
+.hologram-container {
+    position: relative;
+    width: 100%;
+    min-height: 420px;
+    overflow: hidden;
+}
+
+#hologram-scene {
+    width: 100%;
+    height: 420px;
+}
+
+#hologram-scene canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
